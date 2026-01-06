@@ -1,4 +1,4 @@
-// ---------------- BASIC SETUP ----------------
+// Basic Setup
 const videoElement = document.getElementById("video");
 const canvasElement = document.getElementById("canvas");
 const canvasCtx = canvasElement.getContext("2d", {
@@ -17,7 +17,6 @@ let conversationHistory = [];
 let isProcessing = false;
 let gestureHistory = [];
 
-// Smart sentence templates
 const templates = [
   { pattern: ["Hello", "You"], sentence: "Hello, how are you?" },
   { pattern: ["Help", "You"], sentence: "Do you need help?" },
@@ -28,7 +27,7 @@ const templates = [
   { pattern: ["Stop", "You"], sentence: "Please stop!" },
 ];
 
-// ---------------- SOUND EFFECTS ----------------
+// Sound Effects
 function playSuccessSound() {
   const audioContext = new (window.AudioContext || window.webkitAudioContext)();
   const oscillator = audioContext.createOscillator();
@@ -50,7 +49,7 @@ function playSuccessSound() {
   oscillator.stop(audioContext.currentTime + 0.1);
 }
 
-// ---------------- DARK MODE ----------------
+// Dark Mode
 const themeToggle = document.getElementById("themeToggle");
 const savedTheme = localStorage.getItem("theme") || "light";
 
@@ -64,7 +63,7 @@ themeToggle.addEventListener("click", () => {
   localStorage.setItem("theme", isDark ? "dark" : "light");
 });
 
-// ---------------- CONVERSATION HISTORY ----------------
+// Conversation History
 function addToHistory(text, type = "gesture") {
   const timestamp = new Date().toLocaleTimeString();
   conversationHistory.push({ text, timestamp, type });
@@ -86,7 +85,7 @@ document.getElementById("clearHistory").addEventListener("click", () => {
     '<p style="color: var(--text-secondary); font-size: 14px;">Your conversation will appear here...</p>';
 });
 
-// ---------------- SPEED CONTROL ----------------
+// Speed Control
 const speedSlider = document.getElementById("speedSlider");
 const speedLabel = document.getElementById("speedLabel");
 
@@ -103,7 +102,7 @@ speedSlider.addEventListener("input", (e) => {
   }
 });
 
-// ---------------- PRESET PHRASES ----------------
+// Preset Phrases
 document.querySelectorAll(".preset-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     const phrase = btn.getAttribute("data-phrase");
@@ -113,7 +112,7 @@ document.querySelectorAll(".preset-btn").forEach((btn) => {
   });
 });
 
-// ---------------- EXPORT CONVERSATION ----------------
+// Export Conversation
 document.getElementById("exportBtn").addEventListener("click", () => {
   if (conversationHistory.length === 0) {
     alert("No conversation to export!");
@@ -134,11 +133,7 @@ document.getElementById("exportBtn").addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-// =========================================================================
-//  ENGINEER'S UPGRADE: GEOMETRIC CLASSIFIER + STABILIZATION
-// =========================================================================
-
-// BUFFER: To remove jitter/flicker (The "Stabilizer")
+// Gesture Stabilization
 const GESTURE_BUFFER_SIZE = 12;
 const gestureBuffer = [];
 
@@ -148,7 +143,6 @@ function getStabilizedGesture(newGesture) {
     gestureBuffer.shift();
   }
 
-  // Count occurrences
   const counts = {};
   gestureBuffer.forEach((g) => {
     counts[g] = (counts[g] || 0) + 1;
@@ -163,12 +157,10 @@ function getStabilizedGesture(newGesture) {
     }
   }
 
-  // Require significant agreement (>60%) to switch state
   return maxCount > GESTURE_BUFFER_SIZE * 0.6 ? stabilized : lastGesture;
 }
 
 function classifyGesture(landmarks, handedness = "Unknown") {
-  // 1. HELPER: Euclidean Distance (Scale Invariant)
   function getDist(p1, p2) {
     return Math.hypot(
       landmarks[p1].x - landmarks[p2].x,
@@ -176,30 +168,23 @@ function classifyGesture(landmarks, handedness = "Unknown") {
     );
   }
 
-  // 2. ROBUST FINGER STATE (Geometric Ratio)
-  // A finger is Open if Tip-to-Wrist distance is > 1.2x of PIP-to-Wrist distance
   function isFingerOpen(tipIdx, pipIdx) {
     return getDist(tipIdx, 0) > getDist(pipIdx, 0) * 1.2;
   }
 
-  // Thumb state (Special case)
   const thumbOpen = getDist(4, 0) > getDist(3, 0) * 1.1;
   const indexOpen = isFingerOpen(8, 6);
   const middleOpen = isFingerOpen(12, 10);
   const ringOpen = isFingerOpen(16, 14);
   const pinkyOpen = isFingerOpen(20, 18);
 
-  // 3. STRICT CLASSIFICATION (No Overlap Allowed)
-
-  // "OK" -> Thumb & Index tips close, other 3 fingers OPEN
+  // Gesture Classification
   const thumbIndexDist = getDist(4, 8);
   if (thumbIndexDist < 0.05 && middleOpen && ringOpen && pinkyOpen) {
     return { gesture: "OK", confidence: 95 };
   }
 
-  // "Hello" (Open Palm) -> All 5 fingers OPEN and SPREAD WIDE
   if (thumbOpen && indexOpen && middleOpen && ringOpen && pinkyOpen) {
-    // Check if fingers are spread wide apart
     const thumbIndexSpread = Math.abs(landmarks[4].x - landmarks[8].x);
     const indexMiddleSpread = Math.abs(landmarks[8].x - landmarks[12].x);
     const middleRingSpread = Math.abs(landmarks[12].x - landmarks[16].x);
@@ -212,52 +197,41 @@ function classifyGesture(landmarks, handedness = "Unknown") {
         ringPinkySpread) /
       4;
 
-    // Fingers must be spread wide (average > 0.04)
     if (avgSpread > 0.04) {
       return { gesture: "Hello", confidence: 95 };
     }
   }
 
-  // "Help" (4 fingers) -> Thumb CLOSED, 4 fingers OPEN, RIGHT HAND ONLY
   if (!thumbOpen && indexOpen && middleOpen && ringOpen && pinkyOpen) {
-    // Must be RIGHT hand (in selfie mode, right hand appears as "Left")
     if (handedness === "Left") {
       return { gesture: "Help", confidence: 90 };
     }
   }
 
-  // "Peace/Good" -> Index & Middle OPEN, Ring & Pinky & Thumb CLOSED
   if (indexOpen && middleOpen && !ringOpen && !pinkyOpen && !thumbOpen) {
     return { gesture: "Good", confidence: 92 };
   }
 
-  // "You" (Pointing) -> Index OPEN, others CLOSED
   if (indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
     return { gesture: "You", confidence: 90 };
   }
 
-  // "Thank you" -> Thumb & Pinky OPEN, middle 3 CLOSED (Shaka/Y-sign)
   if (thumbOpen && pinkyOpen && !indexOpen && !middleOpen && !ringOpen) {
     return { gesture: "Thank you", confidence: 88 };
   }
 
-  // "Yes" (Thumbs Up) -> Thumb OPEN, others CLOSED, Thumb pointing UP
   if (thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
     if (landmarks[4].y < landmarks[3].y) {
-      // Y-check for up direction
       return { gesture: "Yes", confidence: 95 };
     }
   }
 
-  // "No" (Thumbs Down) -> Thumb OPEN, others CLOSED, Thumb pointing DOWN
   if (thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
     if (landmarks[4].y > landmarks[3].y) {
-      // Y-check for down direction
       return { gesture: "No", confidence: 95 };
     }
   }
 
-  // "Stop" (Fist) -> All fingers CLOSED
   if (!thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
     return { gesture: "Stop", confidence: 90 };
   }
@@ -265,7 +239,7 @@ function classifyGesture(landmarks, handedness = "Unknown") {
   return { gesture: "—", confidence: 0 };
 }
 
-// ---------------- MEDIAPIPE SETUP ----------------
+// MediaPipe Setup
 const hands = new Hands({
   locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
 });
@@ -312,13 +286,8 @@ hands.onResults((results) => {
         radius: 3,
       });
 
-      // 1. Get raw classification
       const rawResult = classifyGesture(landmarks, handedness);
-
-      // 2. Apply stabilization (The "Engineer's Fix")
       gestureOutput = getStabilizedGesture(rawResult.gesture);
-
-      // Use raw confidence for visual feedback
       confidence = rawResult.confidence;
 
       statusDiv.textContent = `Hand: ${handedness} | Detected`;
@@ -327,7 +296,6 @@ hands.onResults((results) => {
       confidence = 0;
     }
 
-    // UI Updates
     gestureDiv.textContent = gestureOutput;
     const confidenceBar = document.getElementById("confidenceBar");
     const confidenceValue = document.getElementById("confidenceValue");
@@ -342,7 +310,6 @@ hands.onResults((results) => {
       confidenceValue.style.color = "#ff4444";
     }
 
-    // Logic for adding to sentence
     const now = Date.now();
     if (
       gestureOutput !== "—" &&
@@ -374,7 +341,7 @@ hands.onResults((results) => {
   });
 });
 
-// ---------------- CAMERA SETUP ----------------
+// Camera Setup
 const camera = new Camera(videoElement, {
   onFrame: async () => await hands.send({ image: videoElement }),
   width: 640,
@@ -383,7 +350,7 @@ const camera = new Camera(videoElement, {
 
 camera.start().then(() => (statusDiv.innerText = "Status: Camera started"));
 
-// ---------------- CLEAR + SPEAK ----------------
+// Clear & Speak
 document.getElementById("clearSentence").onclick = () => {
   sentence = "";
   lastGesture = "—";
@@ -399,7 +366,7 @@ document.getElementById("speakSentence").onclick = () => {
   window.speechSynthesis.speak(msg);
 };
 
-// ---------------- TRANSLATION (MyMemory API) ----------------
+// Translation
 async function translateSentence() {
   const text = sentence.trim();
   const target = document.getElementById("languageSelect").value;
@@ -417,8 +384,6 @@ async function translateSentence() {
     const data = await res.json();
     if (data.responseStatus === 200 && data.responseData.translatedText) {
       const translated = data.responseData.translatedText;
-
-      // Filter out garbage translations
       const lowerTranslated = translated.toLowerCase();
       const garbageKeywords = [
         "delhi metro",
